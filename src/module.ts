@@ -6,23 +6,13 @@ import {
   addImportsDir,
 } from "@nuxt/kit";
 
-export interface ModuleOptions {
-  defaultFont?: string;
-  defaultWidth?: number;
-}
-
-export default defineNuxtModule<ModuleOptions>({
+export default defineNuxtModule({
   meta: {
     name: "nuxt-pretext",
     configKey: "pretext",
   },
 
-  defaults: {
-    defaultFont: "16px Inter",
-    defaultWidth: 300,
-  },
-
-  setup(options) {
+  setup(options, nuxt) {
     const resolver = createResolver(import.meta.url);
 
     addPlugin(resolver.resolve("./runtime/plugin"));
