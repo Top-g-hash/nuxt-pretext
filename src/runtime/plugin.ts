@@ -1,5 +1,12 @@
-import { defineNuxtPlugin } from '#app'
+import { defineNuxtPlugin } from "#app";
 
 export default defineNuxtPlugin((_nuxtApp) => {
-  console.log('Plugin injected by my-module!')
-})
+  return {
+    provide: {
+      pretextDefaults: {
+        font: "16px Inter",
+        width: 300,
+      },
+    },
+  };
+});
