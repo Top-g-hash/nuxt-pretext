@@ -2,5 +2,8 @@ export default defineNuxtConfig({
   modules: ["nuxt-pretext"],
   devtools: { enabled: true },
   compatibilityDate: "latest",
-  myModule: {},
+  pretext: {
+    defaultFont: "16px Inter",
+    defaultWidth: 400,
+  },
 });
