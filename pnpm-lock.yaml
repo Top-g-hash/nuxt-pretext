@@ -8,12 +8,12 @@ importers:
 
   .:
     dependencies:
+      '@chenglou/pretext':
+        specifier: ^0.0.5
+        version: 0.0.5
       '@nuxt/kit':
         specifier: ^4.4.2
         version: 4.4.2(magicast@0.5.2)
-      pretext:
-        specifier: ^0.3.0
-        version: 0.3.0
     devDependencies:
       '@nuxt/devtools':
         specifier: ^3.2.4
@@ -188,6 +188,9 @@ packages:
         optional: true
       commander:
         optional: true
+
+  '@chenglou/pretext@0.0.5':
+    resolution: {integrity: sha512-A8GZN10REdFGsyuiUgLV8jjPDDFMg5GmgxGWV0I3igxBOnzj+jgz2VMmVD7g+SFyoctfeqHFxbNatKSzVRWtRg==}
 
   '@clack/core@1.2.0':
     resolution: {integrity: sha512-qfxof/3T3t9DPU/Rj3OmcFyZInceqj/NVtO9rwIuJqCUgh32gwPjpFQQp/ben07qKlhpwq7GzfWpST4qdJ5Drg==}
@@ -3579,10 +3582,6 @@ packages:
     resolution: {integrity: sha512-vkcDPrRZo1QZLbn5RLGPpg/WmIQ65qoWWhcGKf/b5eplkkarX0m9z8ppCat4mlOqUsWpyNuYgO3VRyrYHSzX5g==}
     engines: {node: '>= 0.8.0'}
 
-  pretext@0.3.0:
-    resolution: {integrity: sha512-Lw7xNZ0KL1N1pzcDr/y2rqsygNDCaZkwP4d/SglB9wFOkFtWPGj62MfYG63CAcf+J1Io5QBfGglzyULx3F9WdA==}
-    hasBin: true
-
   pretty-bytes@7.1.0:
     resolution: {integrity: sha512-nODzvTiYVRGRqAOvE84Vk5JDPyyxsVk0/fbA/bq7RqlnhksGpset09XTxbpvLTIjoaF7K8Z8DG8yHtKGTPSYRw==}
     engines: {node: '>=20'}
@@ -4637,6 +4636,8 @@ snapshots:
     optionalDependencies:
       cac: 6.7.14
       citty: 0.2.2
+
+  '@chenglou/pretext@0.0.5': {}
 
   '@clack/core@1.2.0':
     dependencies:
@@ -8183,8 +8184,6 @@ snapshots:
   powershell-utils@0.1.0: {}
 
   prelude-ls@1.2.1: {}
-
-  pretext@0.3.0: {}
 
   pretty-bytes@7.1.0: {}
 
