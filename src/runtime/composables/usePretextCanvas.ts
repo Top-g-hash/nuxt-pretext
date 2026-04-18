@@ -1,4 +1,4 @@
-export function drawToCanvas(canvas: HTMLCanvasElement, layoutResult) {
+export function usePretextCanvas(canvas: HTMLCanvasElement, layoutResult) {
   const ctx = canvas.getContext("2d");
 
   ctx.font = layoutResult.font;
