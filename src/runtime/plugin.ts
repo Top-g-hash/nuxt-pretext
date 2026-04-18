@@ -1,8 +1,8 @@
-import { defineNuxtPlugin } from "#app";
-import { useRuntimeConfig } from "#app";
+import { defineNuxtPlugin, useRuntimeConfig } from "#app";
 
-export default defineNuxtPlugin((_nuxtApp) => {
+export default defineNuxtPlugin(() => {
   const config = useRuntimeConfig();
+
   return {
     provide: {
       pretextDefaults: config.public.pretext,
