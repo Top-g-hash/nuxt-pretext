@@ -12,8 +12,18 @@ export default defineNuxtModule({
     configKey: "pretext",
   },
 
+  defaults: {
+    defaultFont: "16px Inter",
+    defaultWidth: 300,
+  },
+
   setup(options, nuxt) {
     const resolver = createResolver(import.meta.url);
+
+    nuxt.options.runtimeConfig.public.pretext = {
+      defaultFont: options.defaultFont ?? "16px Inter",
+      defaultWidth: options.defaultWidth ?? 300,
+    };
 
     addPlugin(resolver.resolve("./runtime/plugin"));
 
