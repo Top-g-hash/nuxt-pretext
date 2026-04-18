@@ -1,0 +1,42 @@
+<!-- src/runtime/components/PretextCanvas.vue -->
+<script setup lang="ts">
+import { ref, onMounted, watch } from "vue";
+import { usePretext } from "../composable/usePretext";
+
+const props = defineProps({
+  text: { type: String, required: true },
+  width: { type: Number, default: 300 },
+  font: { type: String, default: "16px Inter" },
+  lineHeight: { type: Number, default: 20 },
+  color: { type: String, default: "#000" },
+});
+
+const canvasRef = ref<HTMLCanvasElement | null>(null);
+const { measure } = usePretext();
+
+function draw() {
+  const canvas = canvasRef.value;
+  if (!canvas) return;
+  const result = measure(props.text, {
+    width: props.width,
+    font: props.font,
+    lineHeight: props.lineHeight,
+  });
+  const ctx = canvas.getContext("2d")!;
+  canvas.width = props.width;
+  canvas.height = result.height || props.lineHeight;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.font = props.font;
+  ctx.fillStyle = props.color;
+  result.lines.forEach((line, i) => {
+    ctx.fillText(line.text, 0, (i + 1) * props.lineHeight - 4);
+  });
+}
+
+onMounted(draw);
+watch(() => [props.text, props.width, props.font, props.lineHeight, props.color], draw);
+</script>
+
+<template>
+  <canvas ref="canvasRef" :style="{ display: 'block' }" />
+</template>
