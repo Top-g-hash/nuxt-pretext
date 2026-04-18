@@ -14,12 +14,9 @@ export function usePretext() {
 
     if (cache.has(key)) return cache.get(key);
 
-    const prepared = prepare({
-      text,
-      ...options,
-    });
-
-    const result = layout(prepared);
+    // usePretext.ts
+    const prepared = prepare({ text, ...options });
+    const result = typeof window !== "undefined" ? layout(prepared) : null;
 
     cache.set(key, result);
 
