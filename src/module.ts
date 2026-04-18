@@ -26,7 +26,8 @@ export default defineNuxtModule({
     };
 
     addPlugin(resolver.resolve("./runtime/plugin"));
-    addImportsDir(resolver.resolve("./runtime/composable"));
+    // src/module.ts
+    addImportsDir(resolver.resolve("./runtime/composables")); // must match folder name exactly
     addComponentsDir({
       path: resolver.resolve("./runtime/components"),
       prefix: "Pretext",
