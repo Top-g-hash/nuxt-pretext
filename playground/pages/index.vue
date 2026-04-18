@@ -1,228 +1,670 @@
 <script setup lang="ts">
-import { ref, computed } from "vue";
+import { ref, computed, onMounted, onUnmounted, nextTick, watch } from "vue";
 
-const containerRef = ref<HTMLElement | null>(null);
-const liveText = ref(
-  "Resize me.\nPretext measures this\nbefore DOM touches it.",
+// ── shared text ──────────────────────────────────────────────
+const demoText = ref(
+  "Pretext measures text before it ever touches the DOM. This means no reflow, no layout thrash, and perfect height reservation on SSR.",
 );
-const inputText = ref(
-  "The quick brown fox jumps over the lazy dog. Pretext handles every language: 春天到了. بدأت الرحلة 🚀",
-);
-const inputWidth = ref(320);
-const inputFont = ref("16px 'DM Mono'");
-const inputLineHeight = ref(24);
+const demoWidth = ref(300);
+const demoFont = ref("15px 'DM Mono'");
+const demoLineH = ref(22);
 
+// ── 1. usePretext vs getBoundingClientRect ───────────────────
 const { measure } = usePretext();
-const { result: resizeResult } = usePretextResize(containerRef, liveText, {
-  font: "15px 'DM Mono'",
-  lineHeight: 22,
-});
-
-const measured = computed(() =>
-  measure(inputText.value, {
-    width: inputWidth.value,
-    font: inputFont.value,
-    lineHeight: inputLineHeight.value,
+const pretextResult = computed(() =>
+  measure(demoText.value, {
+    width: demoWidth.value,
+    font: demoFont.value,
+    lineHeight: demoLineH.value,
   }),
 );
 
-const canvasText = ref("Canvas output.\nSharp at any DPR.");
+const domRef = ref<HTMLElement | null>(null);
+const domHeight = ref<number | null>(null);
+const domLines = ref<number | null>(null);
+const domMeasureMs = ref<number | null>(null);
+const ptMeasureMs = ref<number | null>(null);
+
+function measureDOM() {
+  if (!domRef.value) return;
+  const t0 = performance.now();
+  void domRef.value.getBoundingClientRect();
+  domHeight.value = domRef.value.offsetHeight;
+  domLines.value = Math.round(domRef.value.offsetHeight / demoLineH.value);
+  domMeasureMs.value = +(performance.now() - t0).toFixed(3);
+}
+
+function measurePT() {
+  const t0 = performance.now();
+  measure(demoText.value, {
+    width: demoWidth.value,
+    font: demoFont.value,
+    lineHeight: demoLineH.value,
+  });
+  ptMeasureMs.value = +(performance.now() - t0).toFixed(3);
+}
+
+onMounted(() =>
+  nextTick(() => {
+    measureDOM();
+    measurePT();
+  }),
+);
+watch([demoText, demoWidth, demoLineH], () =>
+  nextTick(() => {
+    measureDOM();
+    measurePT();
+  }),
+);
+
+// ── 2. usePretextResize vs ResizeObserver + offsetHeight ─────
+const containerRef = ref<HTMLElement | null>(null);
+const domResizeRef = ref<HTMLElement | null>(null);
+const domResizeW = ref(0);
+const domResizeH = ref(0);
+const domResizeCount = ref(0);
+const ptResizeCount = ref(0);
+
+const { result: resizeResult } = usePretextResize(containerRef, demoText, {
+  font: demoFont.value,
+  lineHeight: demoLineH.value,
+});
+watch(resizeResult, () => {
+  ptResizeCount.value++;
+});
+
+let domRO: ResizeObserver | null = null;
+onMounted(() => {
+  if (!domResizeRef.value) return;
+  domRO = new ResizeObserver(([entry]) => {
+    domResizeCount.value++;
+    domResizeW.value = Math.round(entry.contentRect.width);
+    domResizeH.value = domResizeRef.value?.offsetHeight ?? 0;
+  });
+  domRO.observe(domResizeRef.value);
+});
+onUnmounted(() => domRO?.disconnect());
+
+// ── 4. SSR hydration jump simulation ─────────────────────────
+const showHydrationJump = ref(false);
+const jumpHappened = ref(false);
+
+function simulateJump() {
+  showHydrationJump.value = false;
+  jumpHappened.value = false;
+  setTimeout(() => {
+    showHydrationJump.value = true;
+    jumpHappened.value = true;
+  }, 700);
+}
+onMounted(simulateJump);
 </script>
 
 <template>
   <div class="lab">
-    <!-- grid background -->
     <div class="grid-bg" aria-hidden="true" />
 
     <header class="lab-header">
       <div class="logo-mark">PT</div>
       <div class="lab-title">
-        <span class="label">nuxt-pretext</span>
-        <span class="subtitle">measurement lab</span>
+        <span class="name">nuxt-pretext</span>
+        <span class="sub">DOM vs Pretext · measurement lab</span>
       </div>
-      <div class="status-bar">
-        <span class="dot green" />
-        <span class="status-text">all systems nominal</span>
+      <div class="status">
+        <span class="dot" /><span>all systems nominal</span>
       </div>
     </header>
 
-    <main class="lab-grid">
-      <!-- ── 1. usePretext ── -->
-      <section class="card span-2" data-index="01">
-        <div class="card-header">
-          <span class="card-tag">composable</span>
-          <h2>usePretext()</h2>
-        </div>
-        <div class="card-body split">
-          <div class="controls">
-            <label class="field">
-              <span>text input</span>
-              <textarea v-model="inputText" rows="3" />
-            </label>
-            <div class="row-fields">
-              <label class="field small">
-                <span>width px</span>
-                <input
-                  v-model.number="inputWidth"
-                  type="number"
-                  min="80"
-                  max="800"
-                />
-              </label>
-              <label class="field small">
-                <span>line height</span>
-                <input
-                  v-model.number="inputLineHeight"
-                  type="number"
-                  min="12"
-                  max="60"
-                />
-              </label>
-            </div>
-            <label class="field">
-              <span>font</span>
-              <input v-model="inputFont" type="text" />
-            </label>
+    <!-- global controls -->
+    <div class="controls-bar">
+      <label class="ctrl">
+        <span>text input</span>
+        <textarea v-model="demoText" rows="2" />
+      </label>
+      <label class="ctrl narrow">
+        <span>width — {{ demoWidth }}px</span>
+        <input v-model.number="demoWidth" type="range" min="120" max="520" />
+      </label>
+      <label class="ctrl narrow">
+        <span>line-height — {{ demoLineH }}px</span>
+        <input v-model.number="demoLineH" type="range" min="14" max="48" />
+      </label>
+    </div>
+
+    <main class="lab-body">
+      <!-- ═══ 01 usePretext vs getBoundingClientRect ═══ -->
+      <section class="comparison">
+        <div class="comp-header">
+          <span class="comp-num">01</span>
+          <div>
+            <h2>usePretext() vs getBoundingClientRect</h2>
+            <p>
+              Can you know height <em>before</em> the element is in the DOM?
+            </p>
           </div>
-          <div class="output-panel">
-            <div class="metric-row">
-              <div class="metric">
-                <span class="metric-val">{{ measured.height }}</span>
-                <span class="metric-label">height px</span>
-              </div>
-              <div class="metric">
-                <span class="metric-val">{{ measured.lineCount }}</span>
-                <span class="metric-label">lines</span>
-              </div>
-              <div class="metric">
-                <span class="metric-val">{{ inputWidth }}</span>
-                <span class="metric-label">max width</span>
-              </div>
+        </div>
+        <div class="comp-grid">
+          <div class="side">
+            <div class="side-label bad">
+              <svg width="8" height="8" viewBox="0 0 8 8">
+                <circle cx="4" cy="4" r="4" fill="#ff4f6e" />
+              </svg>
+              Native DOM
             </div>
-            <div
-              class="line-preview"
-              :style="{ width: inputWidth + 'px', maxWidth: '100%' }"
-            >
+            <div class="code-block">
+              <pre>
+// must be mounted first
+const h = el.getBoundingClientRect().height
+// ↑ triggers layout reflow</pre
+              >
+            </div>
+            <div class="live-box dom-box">
               <div
-                v-for="(line, i) in measured.lines"
-                :key="i"
-                class="line-item"
+                ref="domRef"
                 :style="{
-                  height: inputLineHeight + 'px',
-                  lineHeight: inputLineHeight + 'px',
+                  width: demoWidth + 'px',
+                  lineHeight: demoLineH + 'px',
+                  fontFamily: `'DM Mono',monospace`,
+                  fontSize: '15px',
                 }"
               >
-                <span class="line-num">{{
-                  String(i + 1).padStart(2, "0")
-                }}</span>
-                <span class="line-text">{{ line.text }}</span>
-                <span class="line-width">{{ Math.round(line.width) }}px</span>
+                {{ demoText }}
+              </div>
+            </div>
+            <div class="pills">
+              <div class="pill bad">
+                <span class="pv">{{ domHeight ?? "—" }}<small>px</small></span
+                ><span class="pl">height (post-reflow)</span>
+              </div>
+              <div class="pill bad">
+                <span class="pv">{{ domLines ?? "—" }}</span
+                ><span class="pl">est. lines</span>
+              </div>
+              <div class="pill bad timing">
+                <span class="pv"
+                  >{{ domMeasureMs ?? "—" }}<small>ms</small></span
+                ><span class="pl">reflow cost</span>
+              </div>
+            </div>
+            <div class="tag bad-tag">
+              ⚠ needs mounted element · blocks render · causes layout shift
+            </div>
+          </div>
+
+          <div class="vs"><span>VS</span></div>
+
+          <div class="side">
+            <div class="side-label good">
+              <svg width="8" height="8" viewBox="0 0 8 8">
+                <circle cx="4" cy="4" r="4" fill="#4fffb0" />
+              </svg>
+              usePretext()
+            </div>
+            <div class="code-block">
+              <pre>
+// works before mounting
+const { measure } = usePretext()
+const { height, lineCount, lines }
+  = measure(text, { width, font, lineHeight })</pre
+              >
+            </div>
+            <div class="live-box pt-box" :style="{ width: demoWidth + 'px' }">
+              <div
+                v-for="(line, i) in pretextResult.lines"
+                :key="i"
+                class="ptl"
+                :style="{
+                  height: demoLineH + 'px',
+                  lineHeight: demoLineH + 'px',
+                }"
+              >
+                <span class="ptl-n">{{ i + 1 }}</span>
+                <span class="ptl-t">{{ line.text }}</span>
+                <span class="ptl-w">{{ Math.round(line.width) }}px</span>
+              </div>
+            </div>
+            <div class="pills">
+              <div class="pill good">
+                <span class="pv"
+                  >{{ pretextResult.height }}<small>px</small></span
+                ><span class="pl">height (no DOM)</span>
+              </div>
+              <div class="pill good">
+                <span class="pv">{{ pretextResult.lineCount }}</span
+                ><span class="pl">exact lines</span>
+              </div>
+              <div class="pill good timing">
+                <span class="pv">{{ ptMeasureMs ?? "—" }}<small>ms</small></span
+                ><span class="pl">layout() cost</span>
+              </div>
+            </div>
+            <div class="tag good-tag">
+              ✓ runs in setup() · SSR safe · exact line strings
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══ 02 usePretextResize vs ResizeObserver ═══ -->
+      <section class="comparison">
+        <div class="comp-header">
+          <span class="comp-num">02</span>
+          <div>
+            <h2>usePretextResize() vs ResizeObserver</h2>
+            <p>
+              Drag the <em>right edge</em> of each box and watch what each
+              approach knows.
+            </p>
+          </div>
+        </div>
+        <div class="comp-grid">
+          <div class="side">
+            <div class="side-label bad">
+              <svg width="8" height="8" viewBox="0 0 8 8">
+                <circle cx="4" cy="4" r="4" fill="#ff4f6e" />
+              </svg>
+              ResizeObserver + offsetHeight
+            </div>
+            <div class="code-block">
+              <pre>
+new ResizeObserver(([e]) => {
+  const w = e.contentRect.width // ✓
+  const h = el.offsetHeight     // reflow!
+  // line count? impossible ✗
+})</pre
+              >
+            </div>
+            <div
+              ref="domResizeRef"
+              class="rbox dom-rbox"
+              :style="{
+                fontFamily: `'DM Mono',monospace`,
+                fontSize: '14px',
+                lineHeight: demoLineH + 'px',
+              }"
+            >
+              {{ demoText }}
+            </div>
+            <div class="pills">
+              <div class="pill bad">
+                <span class="pv">{{ domResizeW }}<small>px</small></span
+                ><span class="pl">width</span>
+              </div>
+              <div class="pill bad">
+                <span class="pv">{{ domResizeH }}<small>px</small></span
+                ><span class="pl">height (reflow)</span>
+              </div>
+              <div class="pill bad">
+                <span class="pv">?</span><span class="pl">line count</span>
+              </div>
+            </div>
+            <div class="counter bad-counter">
+              {{ domResizeCount }} reflows triggered
+            </div>
+          </div>
+
+          <div class="vs"><span>VS</span></div>
+
+          <div class="side">
+            <div class="side-label good">
+              <svg width="8" height="8" viewBox="0 0 8 8">
+                <circle cx="4" cy="4" r="4" fill="#4fffb0" />
+              </svg>
+              usePretextResize()
+            </div>
+            <div class="code-block">
+              <pre>
+const { result } = usePretextResize(
+  ref, text, { font, lineHeight }
+)
+// result.lines · result.height · result.lineCount</pre
+              >
+            </div>
+            <div ref="containerRef" class="rbox pt-rbox">
+              <div class="rbox-meta">
+                <span>{{ resizeResult.lineCount }} lines</span>
+                <span>{{ resizeResult.height }}px</span>
+                <span class="drag-h">drag edge →</span>
+              </div>
+              <div
+                v-for="(line, i) in resizeResult.lines"
+                :key="i"
+                class="rline"
+                :style="{ lineHeight: demoLineH + 'px' }"
+              >
+                <span
+                  class="rbar"
+                  :style="{
+                    width: (line.width / (demoWidth || 1)) * 100 + '%',
+                  }"
+                />
+                <span class="rtxt">{{ line.text }}</span>
+              </div>
+            </div>
+            <div class="pills">
+              <div class="pill good">
+                <span class="pv">{{ resizeResult.lineCount }}</span
+                ><span class="pl">exact lines</span>
+              </div>
+              <div class="pill good">
+                <span class="pv"
+                  >{{ resizeResult.height }}<small>px</small></span
+                ><span class="pl">exact height</span>
+              </div>
+              <div class="pill good">
+                <span class="pv">✓</span><span class="pl">line strings</span>
+              </div>
+            </div>
+            <div class="counter good-counter">
+              {{ ptResizeCount }} pretext recalculations
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══ 03 PretextText vs plain <p> ═══ -->
+      <section class="comparison">
+        <div class="comp-header">
+          <span class="comp-num">03</span>
+          <div>
+            <h2>&lt;PretextText&gt; vs &lt;p&gt;</h2>
+            <p>
+              Visually identical — the difference is what data you get
+              <em>before</em> paint.
+            </p>
+          </div>
+        </div>
+        <div class="comp-grid">
+          <div class="side">
+            <div class="side-label bad">
+              <svg width="8" height="8" viewBox="0 0 8 8">
+                <circle cx="4" cy="4" r="4" fill="#ff4f6e" />
+              </svg>
+              Plain &lt;p&gt; tag
+            </div>
+            <div class="code-block">
+              <pre>
+&lt;p :style="{ width: '300px' }"&gt;
+  {{ "{{ text }}" }}
+&lt;/p&gt;</pre
+              >
+            </div>
+            <div class="text-wrap dom-text-wrap">
+              <p
+                class="dom-p"
+                :style="{
+                  width: demoWidth + 'px',
+                  lineHeight: demoLineH + 'px',
+                }"
+              >
+                {{ demoText }}
+              </p>
+            </div>
+            <div class="data-panel bad-data">
+              <div class="dp-row">
+                <span class="dpk">lines</span
+                ><span class="dpv red">unknown until painted</span>
+              </div>
+              <div class="dp-row">
+                <span class="dpk">height</span
+                ><span class="dpv red">unknown until painted</span>
+              </div>
+              <div class="dp-row">
+                <span class="dpk">line[0].text</span
+                ><span class="dpv red">unknown until painted</span>
+              </div>
+              <div class="dp-row">
+                <span class="dpk">per-line widths</span
+                ><span class="dpv red">impossible without JS</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="vs"><span>VS</span></div>
+
+          <div class="side">
+            <div class="side-label good">
+              <svg width="8" height="8" viewBox="0 0 8 8">
+                <circle cx="4" cy="4" r="4" fill="#4fffb0" />
+              </svg>
+              &lt;PretextText&gt;
+            </div>
+            <div class="code-block">
+              <pre>
+&lt;PretextText :text="text"
+  :width="300" font="15px DM Mono"
+  :line-height="22" /&gt;</pre
+              >
+            </div>
+            <div class="text-wrap pt-text-wrap">
+              <PretextText
+                :text="demoText"
+                :width="demoWidth"
+                :font="demoFont"
+                :line-height="demoLineH"
+                class="pttext"
+                :style="{ lineHeight: demoLineH + 'px' }"
+              />
+            </div>
+            <div class="data-panel good-data">
+              <div class="dp-row">
+                <span class="dpk">lines</span
+                ><span class="dpv green">{{ pretextResult.lineCount }}</span>
+              </div>
+              <div class="dp-row">
+                <span class="dpk">height</span
+                ><span class="dpv green">{{ pretextResult.height }}px</span>
+              </div>
+              <div class="dp-row">
+                <span class="dpk">line[0].text</span
+                ><span class="dpv green"
+                  >"{{ pretextResult.lines[0]?.text?.slice(0, 28) }}…"</span
+                >
+              </div>
+              <div class="dp-row">
+                <span class="dpk">line[0].width</span
+                ><span class="dpv green"
+                  >{{ Math.round(pretextResult.lines[0]?.width ?? 0) }}px</span
+                >
               </div>
             </div>
           </div>
         </div>
       </section>
 
-      <!-- ── 2. usePretextResize ── -->
-      <section class="card" data-index="02">
-        <div class="card-header">
-          <span class="card-tag">composable</span>
-          <h2>usePretextResize()</h2>
+      <!-- ═══ 04 SSR hydration jump ═══ -->
+      <section class="comparison">
+        <div class="comp-header">
+          <span class="comp-num">04</span>
+          <div>
+            <h2>SSR hydration jump · v-pretext</h2>
+            <p>
+              Content below the text block shifts when height isn't reserved in
+              advance.
+            </p>
+          </div>
+          <button class="replay" @click="simulateJump">↺ replay</button>
         </div>
-        <div class="card-body">
-          <label class="field">
-            <span>live text</span>
-            <textarea v-model="liveText" rows="3" />
-          </label>
-          <div class="resize-container" ref="containerRef">
-            <div class="resize-hint">↔ drag edge to resize</div>
-            <div class="resize-metrics">
-              <span>{{ resizeResult.lineCount }} lines</span>
-              <span>{{ resizeResult.height }}px tall</span>
+        <div class="comp-grid">
+          <div class="side">
+            <div class="side-label bad">
+              <svg width="8" height="8" viewBox="0 0 8 8">
+                <circle cx="4" cy="4" r="4" fill="#ff4f6e" />
+              </svg>
+              No height reservation
             </div>
-            <div
-              v-for="(line, i) in resizeResult.lines"
-              :key="i"
-              class="resize-line"
-            >
-              {{ line.text }}
+            <div class="browser-mock">
+              <div class="brow-bar" />
+              <div class="brow-body">
+                <div
+                  class="sk"
+                  style="height: 10px; width: 55%; margin-bottom: 8px"
+                />
+                <div
+                  class="sk"
+                  style="height: 10px; width: 85%; margin-bottom: 8px"
+                />
+                <div
+                  class="ssr-text no-res"
+                  :class="{ loaded: showHydrationJump }"
+                  :style="{ lineHeight: '18px' }"
+                >
+                  <template v-if="showHydrationJump"
+                    >{{ demoText.slice(0, 100) }}...</template
+                  >
+                </div>
+                <div
+                  class="sk below"
+                  :class="{ jumped: jumpHappened && showHydrationJump }"
+                  style="height: 10px; width: 70%; margin-top: 6px"
+                >
+                  <span v-if="jumpHappened && showHydrationJump" class="jlabel"
+                    >↑ layout shift!</span
+                  >
+                </div>
+                <div
+                  class="sk"
+                  style="height: 10px; width: 45%; margin-top: 6px"
+                />
+              </div>
+            </div>
+            <div class="tag bad-tag">
+              text loads → height expands → content below jumps
+            </div>
+          </div>
+
+          <div class="vs"><span>VS</span></div>
+
+          <div class="side">
+            <div class="side-label good">
+              <svg width="8" height="8" viewBox="0 0 8 8">
+                <circle cx="4" cy="4" r="4" fill="#4fffb0" />
+              </svg>
+              v-pretext · height reserved
+            </div>
+            <div class="browser-mock">
+              <div class="brow-bar" />
+              <div class="brow-body">
+                <div
+                  class="sk"
+                  style="height: 10px; width: 55%; margin-bottom: 8px"
+                />
+                <div
+                  class="sk"
+                  style="height: 10px; width: 85%; margin-bottom: 8px"
+                />
+                <div
+                  class="ssr-text with-res"
+                  :class="{ loaded: showHydrationJump }"
+                  :style="{
+                    minHeight: pretextResult.height + 'px',
+                    lineHeight: '18px',
+                  }"
+                  v-pretext="{ font: demoFont, lineHeight: demoLineH }"
+                >
+                  <template v-if="showHydrationJump"
+                    >{{ demoText.slice(0, 100) }}...</template
+                  >
+                </div>
+                <div
+                  class="sk stable"
+                  style="height: 10px; width: 70%; margin-top: 6px"
+                >
+                  <span class="slabel">✓ stayed in place</span>
+                </div>
+                <div
+                  class="sk"
+                  style="height: 10px; width: 45%; margin-top: 6px"
+                />
+              </div>
+            </div>
+            <div class="tag good-tag">
+              height reserved → no shift → smooth hydration
             </div>
           </div>
         </div>
       </section>
 
-      <!-- ── 3. PretextText ── -->
-      <section class="card" data-index="03">
-        <div class="card-header">
-          <span class="card-tag">component</span>
-          <h2>&lt;PretextText /&gt;</h2>
+      <!-- ═══ 05 PretextCanvas vs DOM text ═══ -->
+      <section class="comparison">
+        <div class="comp-header">
+          <span class="comp-num">05</span>
+          <div>
+            <h2>&lt;PretextCanvas&gt; vs DOM text</h2>
+            <p>
+              Same output — one triggers the full layout pipeline, one goes
+              <em>straight to paint</em>.
+            </p>
+          </div>
         </div>
-        <div class="card-body">
-          <p class="desc">
-            DOM lines. SSR placeholder holds space before hydration.
-          </p>
-          <div class="component-demo">
-            <PretextText
-              text="This paragraph is measured before DOM renders. Each line is a separate div — perfect for virtualization, animations, or per-line effects."
-              :width="260"
-              font="15px 'DM Mono'"
-              :line-height="22"
-              class="pretext-text-demo"
-            />
-            <div class="demo-ruler" :style="{ width: '260px' }">
-              <span>260px</span>
+        <div class="comp-grid">
+          <div class="side">
+            <div class="side-label bad">
+              <svg width="8" height="8" viewBox="0 0 8 8">
+                <circle cx="4" cy="4" r="4" fill="#ff4f6e" />
+              </svg>
+              DOM text
+            </div>
+            <div class="code-block">
+              <pre>
+&lt;p&gt;text&lt;/p&gt;
+// pipeline: style → layout → paint
+// layout runs on every change</pre
+              >
+            </div>
+            <div class="canvas-wrap dom-canvas-wrap">
+              <p
+                class="dom-canvas-p"
+                :style="{
+                  width: demoWidth + 'px',
+                  lineHeight: demoLineH + 'px',
+                  fontFamily: `'DM Mono',monospace`,
+                  fontSize: '15px',
+                }"
+              >
+                {{ demoText }}
+              </p>
+            </div>
+            <div class="pipeline">
+              <span class="pipe-step active">Style</span>
+              <span class="pipe-arrow">→</span>
+              <span class="pipe-step active">Layout ⚠</span>
+              <span class="pipe-arrow">→</span>
+              <span class="pipe-step active">Paint</span>
             </div>
           </div>
-        </div>
-      </section>
 
-      <!-- ── 4. PretextCanvas ── -->
-      <section class="card" data-index="04">
-        <div class="card-header">
-          <span class="card-tag">component</span>
-          <h2>&lt;PretextCanvas /&gt;</h2>
-        </div>
-        <div class="card-body">
-          <label class="field">
-            <span>canvas text</span>
-            <textarea v-model="canvasText" rows="2" />
-          </label>
-          <div class="canvas-demo">
-            <PretextCanvas
-              :text="canvasText"
-              :width="300"
-              font="bold 15px 'DM Mono'"
-              :line-height="24"
-              color="#e2ff5d"
-              class="canvas-el"
-            />
-          </div>
-          <p class="desc">No DOM layout. No reflow. Pure canvas.</p>
-        </div>
-      </section>
+          <div class="vs"><span>VS</span></div>
 
-      <!-- ── 5. v-pretext ── -->
-      <section class="card span-2" data-index="05">
-        <div class="card-header">
-          <span class="card-tag">directive</span>
-          <h2>v-pretext</h2>
-        </div>
-        <div class="card-body directive-demo">
-          <div class="directive-col">
-            <span class="col-label">with v-pretext</span>
-            <div
-              v-pretext="{ font: '15px DM Mono', lineHeight: 20 }"
-              class="directive-box with"
-            >
-              This div's <code>min-height</code> is set before content renders —
-              no layout shift on hydration.
+          <div class="side">
+            <div class="side-label good">
+              <svg width="8" height="8" viewBox="0 0 8 8">
+                <circle cx="4" cy="4" r="4" fill="#4fffb0" />
+              </svg>
+              &lt;PretextCanvas&gt;
             </div>
-          </div>
-          <div class="directive-col">
-            <span class="col-label">without v-pretext</span>
-            <div class="directive-box without">
-              This div has no reserved height. On SSR it collapses to zero,
-              causing a visible jump.
+            <div class="code-block">
+              <pre>
+&lt;PretextCanvas :text="text"
+  :width="300" color="#e2ff5d" /&gt;
+// skips layout entirely</pre
+              >
+            </div>
+            <div class="canvas-wrap pt-canvas-wrap">
+              <PretextCanvas
+                :text="demoText"
+                :width="demoWidth"
+                :font="demoFont"
+                :line-height="demoLineH"
+                color="#e2ff5d"
+              />
+            </div>
+            <div class="pipeline">
+              <span class="pipe-step dim">Style</span>
+              <span class="pipe-arrow dim">→</span>
+              <span class="pipe-step dim">Layout <s>skipped</s></span>
+              <span class="pipe-arrow">→</span>
+              <span class="pipe-step active">Paint ✓</span>
             </div>
           </div>
         </div>
@@ -231,13 +673,13 @@ const canvasText = ref("Canvas output.\nSharp at any DPR.");
 
     <footer class="lab-footer">
       <span>nuxt-pretext playground</span>
-      <span>pretext measures before DOM</span>
+      <span>pretext knows before DOM does</span>
     </footer>
   </div>
 </template>
 
 <style>
-@import url("https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,400&family=Syne:wght@700;800&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Syne:wght@700;800&display=swap");
 
 *,
 *::before,
@@ -249,33 +691,26 @@ const canvasText = ref("Canvas output.\nSharp at any DPR.");
 
 :root {
   --bg: #0b0c0e;
-  --surface: #111316;
-  --surface-2: #191c21;
-  --border: #252830;
-  --border-bright: #353a44;
-  --accent: #e2ff5d;
-  --accent-dim: rgba(226, 255, 93, 0.12);
-  --text-1: #e8eaf0;
-  --text-2: #7a8194;
-  --text-3: #454c5e;
-  --green: #4fffb0;
+  --s1: #0f1115;
+  --s2: #161a20;
+  --b1: #1f2228;
+  --b2: #2d3340;
+  --acc: #e2ff5d;
+  --grn: #4fffb0;
   --red: #ff4f6e;
+  --t1: #dde0eb;
+  --t2: #6b7385;
+  --t3: #3a3f4d;
   --mono: "DM Mono", monospace;
-  --display: "Syne", sans-serif;
-  --radius: 6px;
+  --disp: "Syne", sans-serif;
+  --r: 6px;
 }
 
 body {
   background: var(--bg);
-  color: var(--text-1);
+  color: var(--t1);
   font-family: var(--mono);
-}
-
-/* ── layout ── */
-.lab {
-  min-height: 100vh;
-  position: relative;
-  overflow-x: hidden;
+  font-size: 14px;
 }
 
 .grid-bg {
@@ -284,429 +719,668 @@ body {
   pointer-events: none;
   z-index: 0;
   background-image:
-    linear-gradient(var(--border) 1px, transparent 1px),
-    linear-gradient(90deg, var(--border) 1px, transparent 1px);
-  background-size: 40px 40px;
-  mask-image: radial-gradient(
-    ellipse 80% 80% at 50% 0%,
-    black 40%,
-    transparent 100%
-  );
-  opacity: 0.5;
+    linear-gradient(var(--b1) 1px, transparent 1px),
+    linear-gradient(90deg, var(--b1) 1px, transparent 1px);
+  background-size: 36px 36px;
+  mask-image: radial-gradient(ellipse 90% 60% at 50% 0, black, transparent);
+  opacity: 0.6;
 }
 
+/* header */
 .lab-header {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 20px 32px;
-  border-bottom: 1px solid var(--border);
-  background: rgba(11, 12, 14, 0.8);
-  backdrop-filter: blur(12px);
   position: sticky;
   top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 32px;
+  border-bottom: 1px solid var(--b1);
+  background: rgba(11, 12, 14, 0.9);
+  backdrop-filter: blur(16px);
 }
-
 .logo-mark {
-  width: 36px;
-  height: 36px;
-  background: var(--accent);
-  color: var(--bg);
-  font-family: var(--display);
-  font-size: 13px;
+  width: 34px;
+  height: 34px;
+  border-radius: 4px;
+  background: var(--acc);
+  color: #0b0c0e;
+  font-family: var(--disp);
+  font-size: 12px;
   font-weight: 800;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 4px;
-  letter-spacing: -0.5px;
 }
-
 .lab-title {
   display: flex;
   flex-direction: column;
   gap: 1px;
 }
-.lab-title .label {
-  font-family: var(--display);
-  font-size: 16px;
+.lab-title .name {
+  font-family: var(--disp);
+  font-size: 15px;
   font-weight: 700;
-  color: var(--text-1);
 }
-.lab-title .subtitle {
-  font-size: 11px;
-  color: var(--text-3);
-  letter-spacing: 0.08em;
+.lab-title .sub {
+  font-size: 10px;
+  color: var(--t2);
   text-transform: uppercase;
+  letter-spacing: 0.08em;
 }
-
-.status-bar {
+.status {
   margin-left: auto;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
+  font-size: 10px;
+  color: var(--t2);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
 }
 .dot {
   width: 7px;
   height: 7px;
   border-radius: 50%;
+  background: var(--grn);
+  box-shadow: 0 0 6px var(--grn);
+  animation: blink 2s infinite;
 }
-.dot.green {
-  background: var(--green);
-  box-shadow: 0 0 6px var(--green);
-  animation: pulse 2s infinite;
-}
-.status-text {
-  font-size: 11px;
-  color: var(--text-3);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-
-@keyframes pulse {
+@keyframes blink {
   0%,
   100% {
     opacity: 1;
   }
   50% {
-    opacity: 0.4;
+    opacity: 0.3;
   }
 }
 
-/* ── grid ── */
-.lab-grid {
+/* controls */
+.controls-bar {
   position: relative;
   z-index: 1;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1px;
-  background: var(--border);
-  padding: 0;
-}
-
-/* ── cards ── */
-.card {
-  background: var(--surface);
-  padding: 28px;
-  transition: background 0.2s;
-}
-.card:hover {
-  background: var(--surface-2);
-}
-.card.span-2 {
-  grid-column: span 2;
-}
-
-.card-header {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-  margin-bottom: 20px;
-  padding-bottom: 14px;
-  border-bottom: 1px solid var(--border);
-}
-.card-tag {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--accent);
-  background: var(--accent-dim);
-  padding: 2px 8px;
-  border-radius: 99px;
-}
-.card-header h2 {
-  font-family: var(--display);
-  font-size: 17px;
-  font-weight: 700;
-  color: var(--text-1);
-  letter-spacing: -0.3px;
-}
-
-/* ── data-index marker ── */
-.card::before {
-  content: attr(data-index);
-  position: absolute;
-  top: 28px;
-  right: 28px;
-  font-size: 11px;
-  color: var(--text-3);
-  font-family: var(--display);
-}
-.card {
-  position: relative;
-}
-
-/* ── fields ── */
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  font-size: 11px;
-  color: var(--text-3);
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
-}
-.field textarea,
-.field input {
-  background: var(--bg);
-  border: 1px solid var(--border-bright);
-  color: var(--text-1);
-  font-family: var(--mono);
-  font-size: 13px;
-  padding: 8px 10px;
-  border-radius: var(--radius);
-  outline: none;
-  resize: vertical;
-  transition: border-color 0.15s;
-}
-.field textarea:focus,
-.field input:focus {
-  border-color: var(--accent);
-}
-.field.small {
-  flex: 1;
-}
-.row-fields {
-  display: flex;
-  gap: 12px;
-}
-.controls {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  min-width: 240px;
-}
-
-/* ── split layout for card 01 ── */
-.split {
-  display: flex;
-  gap: 28px;
-}
-
-/* ── metrics ── */
-.metric-row {
   display: flex;
   gap: 16px;
-  margin-bottom: 16px;
+  align-items: flex-end;
+  padding: 14px 32px;
+  background: var(--s1);
+  border-bottom: 1px solid var(--b1);
 }
-.metric {
-  flex: 1;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 12px 14px;
+.ctrl {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-}
-.metric-val {
-  font-family: var(--display);
-  font-size: 26px;
-  font-weight: 800;
-  color: var(--accent);
-  letter-spacing: -1px;
-}
-.metric-label {
+  gap: 5px;
   font-size: 10px;
-  color: var(--text-3);
+  color: var(--t2);
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.07em;
+  flex: 1;
+}
+.ctrl.narrow {
+  flex: 0 0 180px;
+}
+.ctrl textarea,
+.ctrl input[type="text"] {
+  background: var(--bg);
+  border: 1px solid var(--b2);
+  color: var(--t1);
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 7px 9px;
+  border-radius: var(--r);
+  outline: none;
+  resize: none;
+}
+.ctrl textarea:focus {
+  border-color: var(--acc);
+}
+.ctrl input[type="range"] {
+  accent-color: var(--acc);
+  width: 100%;
 }
 
-/* ── line preview ── */
-.line-preview {
+/* body */
+.lab-body {
+  position: relative;
+  z-index: 1;
+  padding: 0 32px 48px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: var(--b1);
+}
+
+/* comparison */
+.comparison {
+  background: var(--s1);
+  padding: 28px;
+}
+.comp-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 22px;
+}
+.comp-num {
+  font-family: var(--disp);
+  font-size: 30px;
+  font-weight: 800;
+  color: var(--t3);
+  line-height: 1;
+  flex-shrink: 0;
+  padding-top: 2px;
+}
+.comp-header h2 {
+  font-family: var(--disp);
+  font-size: 17px;
+  font-weight: 700;
+  margin-bottom: 3px;
+}
+.comp-header p {
+  font-size: 12px;
+  color: var(--t2);
+}
+.comp-header p em {
+  color: var(--acc);
+  font-style: normal;
+}
+.replay {
+  margin-left: auto;
+  background: var(--s2);
+  border: 1px solid var(--b2);
+  color: var(--t1);
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 6px 14px;
+  border-radius: var(--r);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.replay:hover {
+  border-color: var(--acc);
+  color: var(--acc);
+}
+
+/* two col */
+.comp-grid {
+  display: grid;
+  grid-template-columns: 1fr 36px 1fr;
+  gap: 0;
+  align-items: start;
+}
+.vs {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 32px;
+}
+.vs span {
+  font-family: var(--disp);
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--t3);
+  writing-mode: vertical-rl;
+  letter-spacing: 0.1em;
+}
+.side {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+
+.side-label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 5px 10px;
+  border-radius: var(--r);
+}
+.side-label.bad {
+  color: var(--red);
+  background: rgba(255, 79, 110, 0.08);
+  border: 1px solid rgba(255, 79, 110, 0.2);
+}
+.side-label.good {
+  color: var(--grn);
+  background: rgba(79, 255, 176, 0.08);
+  border: 1px solid rgba(79, 255, 176, 0.2);
+}
+
+.code-block {
   background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border: 1px solid var(--b2);
+  border-radius: var(--r);
+}
+.code-block pre {
+  padding: 11px 13px;
+  font-size: 11.5px;
+  line-height: 1.7;
+  color: var(--t2);
+  white-space: pre-wrap;
+  font-family: var(--mono);
+}
+
+/* pills */
+.pills {
+  display: flex;
+  gap: 7px;
+}
+.pill {
+  flex: 1;
+  border-radius: var(--r);
+  padding: 9px 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  border: 1px solid;
+}
+.pill.bad {
+  background: rgba(255, 79, 110, 0.05);
+  border-color: rgba(255, 79, 110, 0.15);
+}
+.pill.good {
+  background: rgba(79, 255, 176, 0.05);
+  border-color: rgba(79, 255, 176, 0.15);
+}
+.pill.timing {
+  flex: 0 0 auto;
+  min-width: 100px;
+}
+.pv {
+  font-family: var(--disp);
+  font-size: 19px;
+  font-weight: 800;
+  line-height: 1;
+}
+.pv small {
+  font-size: 10px;
+  margin-left: 1px;
+  opacity: 0.6;
+}
+.pill.bad .pv {
+  color: var(--red);
+}
+.pill.good .pv {
+  color: var(--grn);
+}
+.pl {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--t2);
+}
+
+.tag {
+  font-size: 11px;
+  padding: 6px 10px;
+  border-radius: var(--r);
+}
+.bad-tag {
+  color: var(--red);
+  background: rgba(255, 79, 110, 0.06);
+}
+.good-tag {
+  color: var(--grn);
+  background: rgba(79, 255, 176, 0.06);
+}
+
+/* live boxes */
+.live-box {
+  background: var(--bg);
+  border: 1px solid var(--b2);
+  border-radius: var(--r);
+}
+.dom-box {
+  padding: 12px;
+  color: var(--t1);
+}
+.pt-box {
   overflow: hidden;
 }
-.line-item {
+.ptl {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 0 10px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--b1);
   font-size: 12px;
 }
-.line-item:last-child {
+.ptl:last-child {
   border-bottom: none;
 }
-.line-num {
-  color: var(--text-3);
-  width: 20px;
+.ptl-n {
+  color: var(--t3);
+  width: 14px;
   flex-shrink: 0;
+  font-size: 10px;
 }
-.line-text {
+.ptl-t {
   flex: 1;
-  color: var(--text-1);
+  color: var(--t1);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.line-width {
-  color: var(--accent);
-  font-size: 11px;
+.ptl-w {
+  color: var(--acc);
+  font-size: 10px;
   flex-shrink: 0;
 }
 
-/* ── resize container ── */
-.resize-container {
-  background: var(--bg);
-  border: 1px solid var(--border-bright);
-  border-radius: var(--radius);
-  padding: 14px;
-  resize: horizontal;
-  overflow: auto;
+/* resize boxes */
+.rbox {
+  border-radius: var(--r);
+  padding: 12px;
   min-width: 120px;
-  max-width: 100%;
-  width: 280px;
+  overflow: auto;
+  min-height: 60px;
+  resize: horizontal;
 }
-.resize-hint {
+.dom-rbox {
+  background: var(--bg);
+  border: 1px solid rgba(255, 79, 110, 0.25);
+  color: var(--t1);
+}
+.pt-rbox {
+  background: var(--bg);
+  border: 1px solid rgba(79, 255, 176, 0.25);
+  width: 260px;
+}
+.rbox-meta {
+  display: flex;
+  gap: 10px;
   font-size: 10px;
-  color: var(--text-3);
-  text-align: right;
+  color: var(--acc);
   margin-bottom: 8px;
   text-transform: uppercase;
-  letter-spacing: 0.07em;
+  letter-spacing: 0.06em;
 }
-.resize-metrics {
-  display: flex;
-  gap: 12px;
-  margin-bottom: 10px;
+.drag-h {
+  margin-left: auto;
+  color: var(--t3);
+}
+.rline {
+  position: relative;
+  font-size: 13px;
+  color: var(--t1);
+  padding-left: 4px;
+}
+.rbar {
+  position: absolute;
+  left: 0;
+  top: 3px;
+  bottom: 3px;
+  background: rgba(79, 255, 176, 0.1);
+  border-radius: 2px;
+  z-index: 0;
+}
+.rtxt {
+  position: relative;
+  z-index: 1;
+}
+.counter {
   font-size: 11px;
-  color: var(--accent);
+  padding: 6px 10px;
+  border-radius: var(--r);
 }
-.resize-line {
-  font-size: 14px;
-  color: var(--text-1);
-  line-height: 22px;
-  border-left: 2px solid var(--border);
-  padding-left: 8px;
-  margin-bottom: 2px;
+.bad-counter {
+  color: var(--red);
+  background: rgba(255, 79, 110, 0.06);
+}
+.good-counter {
+  color: var(--grn);
+  background: rgba(79, 255, 176, 0.06);
 }
 
-/* ── PretextText demo ── */
-.component-demo {
+/* comp 3 text comparison */
+.text-wrap {
+  border-radius: var(--r);
+  padding: 12px;
+}
+.dom-text-wrap {
+  background: var(--bg);
+  border: 1px solid rgba(255, 79, 110, 0.2);
+}
+.pt-text-wrap {
+  background: var(--bg);
+  border: 1px solid rgba(79, 255, 176, 0.2);
+}
+.dom-p {
+  color: var(--t1);
+  font-family: var(--mono);
+  font-size: 15px;
+}
+.pttext {
+  color: var(--t1);
+  font-family: var(--mono);
+  font-size: 15px;
+}
+.data-panel {
+  background: var(--bg);
+  border: 1px solid var(--b2);
+  border-radius: var(--r);
+  padding: 10px 12px;
   display: flex;
   flex-direction: column;
+  gap: 5px;
+}
+.bad-data {
+  border-color: rgba(255, 79, 110, 0.2);
+}
+.good-data {
+  border-color: rgba(79, 255, 176, 0.2);
+}
+.dp-row {
+  display: flex;
+  align-items: baseline;
   gap: 8px;
+  font-size: 11px;
 }
-.pretext-text-demo {
+.dpk {
+  color: var(--t2);
+  flex-shrink: 0;
+  min-width: 100px;
+}
+.dpv {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dpv.red {
+  color: var(--red);
+  font-style: italic;
+}
+.dpv.green {
+  color: var(--acc);
+}
+
+/* comp 4 browser mock */
+.browser-mock {
   background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 12px;
-  font-size: 15px;
-  color: var(--text-1);
-  line-height: 22px;
+  border: 1px solid var(--b2);
+  border-radius: var(--r);
+  overflow: hidden;
 }
-.demo-ruler {
-  height: 20px;
+.brow-bar {
+  height: 26px;
+  background: #131519;
+  border-bottom: 1px solid var(--b1);
+}
+.brow-bar::before {
+  content: "● ● ●";
+  font-size: 8px;
+  color: var(--t3);
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  border-top: 1px solid var(--accent);
-  border-right: 1px solid var(--accent);
-  border-left: 1px solid var(--accent);
-  padding: 4px 4px 0;
-  font-size: 10px;
-  color: var(--accent);
-  text-transform: uppercase;
+  padding: 0 10px;
+  height: 100%;
+  letter-spacing: 3px;
 }
-
-/* ── Canvas demo ── */
-.canvas-demo {
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 16px;
-  margin-bottom: 10px;
-}
-.canvas-el {
-  display: block;
-}
-
-/* ── directive demo ── */
-.directive-demo {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 20px;
-}
-.directive-col {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.col-label {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--text-3);
-}
-.directive-box {
-  border-radius: var(--radius);
+.brow-body {
   padding: 14px;
-  font-size: 13px;
-  line-height: 20px;
-  color: var(--text-1);
-}
-.directive-box.with {
-  background: var(--accent-dim);
-  border: 1px solid rgba(226, 255, 93, 0.3);
-}
-.directive-box.without {
-  background: var(--bg);
-  border: 1px solid var(--border);
-}
-.directive-box code {
-  color: var(--accent);
-  font-family: var(--mono);
-}
-
-/* ── misc ── */
-.desc {
-  font-size: 12px;
-  color: var(--text-3);
-  margin-bottom: 12px;
-  line-height: 1.6;
-}
-.card-body {
   display: flex;
   flex-direction: column;
-  gap: 14px;
 }
-.output-panel {
-  flex: 1;
-  min-width: 0;
+.sk {
+  background: var(--b2);
+  border-radius: 3px;
+  animation: shim 1.5s infinite;
+}
+@keyframes shim {
+  0%,
+  100% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+.ssr-text {
+  font-size: 12px;
+  font-family: var(--mono);
+  color: var(--t1);
+  padding: 6px 8px;
+  border-radius: 3px;
+  margin: 8px 0;
+  transition: background 0.3s;
+  min-height: 18px;
+}
+.no-res {
+  background: transparent;
+  border: 1px dashed rgba(255, 79, 110, 0.3);
+}
+.no-res.loaded {
+  background: rgba(255, 79, 110, 0.06);
+}
+.with-res {
+  background: rgba(79, 255, 176, 0.04);
+  border: 1px dashed rgba(79, 255, 176, 0.3);
+}
+.with-res.loaded {
+  background: rgba(79, 255, 176, 0.08);
+}
+.below {
+  transition: background 0.3s;
+}
+.below.jumped {
+  background: rgba(255, 79, 110, 0.35) !important;
+  animation: jmp 0.4s ease;
+}
+@keyframes jmp {
+  0% {
+    transform: translateY(0);
+  }
+  35% {
+    transform: translateY(20px);
+  }
+  100% {
+    transform: translateY(0);
+  }
+}
+.jlabel {
+  font-size: 9px;
+  color: var(--red);
+  padding-left: 4px;
+  line-height: 10px;
+}
+.stable {
+  background: rgba(79, 255, 176, 0.15) !important;
+}
+.slabel {
+  font-size: 9px;
+  color: var(--grn);
+  padding-left: 4px;
+  line-height: 10px;
 }
 
+/* comp 5 canvas */
+.canvas-wrap {
+  background: var(--bg);
+  border: 1px solid var(--b2);
+  border-radius: var(--r);
+  padding: 14px;
+}
+.dom-canvas-wrap {
+  border-color: rgba(255, 79, 110, 0.2);
+}
+.pt-canvas-wrap {
+  border-color: rgba(79, 255, 176, 0.2);
+}
+.dom-canvas-p {
+  color: var(--t1);
+}
+.pipeline {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  padding: 7px 10px;
+  border-radius: var(--r);
+  background: var(--bg);
+  border: 1px solid var(--b2);
+}
+.pipe-step {
+  padding: 3px 8px;
+  border-radius: 3px;
+  background: var(--b2);
+  color: var(--t1);
+}
+.pipe-step.active {
+  background: rgba(79, 255, 176, 0.15);
+  color: var(--grn);
+  border: 1px solid rgba(79, 255, 176, 0.3);
+}
+.pipe-step.dim {
+  opacity: 0.3;
+}
+.pipe-arrow {
+  color: var(--t3);
+}
+.pipe-arrow.dim {
+  opacity: 0.2;
+}
+.pipe-step s {
+  text-decoration-color: var(--red);
+}
+
+/* footer */
 .lab-footer {
   position: relative;
   z-index: 1;
   display: flex;
   justify-content: space-between;
-  padding: 14px 32px;
-  border-top: 1px solid var(--border);
-  font-size: 11px;
-  color: var(--text-3);
+  padding: 12px 32px;
+  border-top: 1px solid var(--b1);
+  font-size: 10px;
+  color: var(--t3);
   text-transform: uppercase;
   letter-spacing: 0.08em;
+  background: var(--s1);
 }
 
-@media (max-width: 768px) {
-  .lab-grid {
+@media (max-width: 760px) {
+  .comp-grid {
     grid-template-columns: 1fr;
   }
-  .card.span-2 {
-    grid-column: span 1;
+  .vs {
+    display: none;
   }
-  .split {
+  .controls-bar {
     flex-direction: column;
   }
-  .directive-demo {
-    grid-template-columns: 1fr;
+  .ctrl.narrow {
+    flex: 1;
+    width: 100%;
+  }
+  .lab-header,
+  .lab-body,
+  .controls-bar {
+    padding-left: 16px;
+    padding-right: 16px;
   }
 }
 </style>
