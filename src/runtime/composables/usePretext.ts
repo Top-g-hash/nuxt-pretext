@@ -9,8 +9,10 @@ type MeasureOptions = {
 
 const cache = new Map();
 
+// usePretext.ts
 export function usePretext() {
   function measure(text: string, options: MeasureOptions = {}) {
+    if (import.meta.server) return { lines: [], height: 0, lineCount: 0 };
     const { width = 300, font = "16px Inter", lineHeight = 20 } = options;
     const key = JSON.stringify({ text, font, width, lineHeight });
     if (cache.has(key)) return cache.get(key);
