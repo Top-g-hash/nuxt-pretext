@@ -1,11 +1,9 @@
-// src/module.ts
 import {
   defineNuxtModule,
   createResolver,
   addPlugin,
   addComponentsDir,
   addImportsDir,
-  addPluginTemplate,
 } from "@nuxt/kit";
 
 export default defineNuxtModule({
@@ -17,12 +15,17 @@ export default defineNuxtModule({
   },
   setup(options, nuxt) {
     const resolver = createResolver(import.meta.url);
-    nuxt.options.vite ||= {};
-    nuxt.options.vite.ssr ||= {};
-    nuxt.options.vite.ssr.noExternal = nuxt.options.vite.ssr.noExternal || [];
-    (nuxt.options.vite.ssr.noExternal as string[]).push("@chenglou/pretext");
 
-    // Pass defaults to runtime via runtimeConfig
+    // ✅ THE FIX: alias pretext to a no-op stub in SSR
+    // The real package uses canvas at import time — it must never load in Node
+    nuxt.hook("vite:extendConfig", (config, { isServer }) => {
+      if (!isServer) return;
+      config.resolve ??= {};
+      config.resolve.alias ??= {};
+      (config.resolve.alias as Record<string, string>)["@chenglou/pretext"] =
+        resolver.resolve("./runtime/shims/pretext.stub");
+    });
+
     nuxt.options.runtimeConfig.public.pretext = {
       defaultFont: options.defaultFont,
       defaultWidth: options.defaultWidth,
@@ -30,14 +33,11 @@ export default defineNuxtModule({
     };
 
     addPlugin(resolver.resolve("./runtime/plugin"));
-    // src/module.ts
-    addImportsDir(resolver.resolve("./runtime/composables")); // must match folder name exactly
+    addPlugin(resolver.resolve("./runtime/directivePlugin"));
+    addImportsDir(resolver.resolve("./runtime/composables"));
     addComponentsDir({
       path: resolver.resolve("./runtime/components"),
       prefix: "Pretext",
     });
-
-    // Register directive via plugin
-    addPlugin(resolver.resolve("./runtime/directivePlugin"));
   },
 });
