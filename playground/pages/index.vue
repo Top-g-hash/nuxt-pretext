@@ -26,6 +26,7 @@ const domMeasureMs = ref<number | null>(null);
 const ptMeasureMs = ref<number | null>(null);
 
 function measureDOM() {
+  if (!domRef.value || demoLineH.value <= 0) return;
   if (!domRef.value) return;
   const t0 = performance.now();
   void domRef.value.getBoundingClientRect();
@@ -50,12 +51,13 @@ onMounted(() =>
     measurePT();
   }),
 );
-watch([demoText, demoWidth, demoLineH], () =>
+watch([demoText, demoWidth, demoLineH], () => {
+  if (demoWidth.value <= 0) return; // ← add this
   nextTick(() => {
     measureDOM();
     measurePT();
-  }),
-);
+  });
+});
 
 // ── 2. usePretextResize vs ResizeObserver + offsetHeight ─────
 const containerRef = ref<HTMLElement | null>(null);

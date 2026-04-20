@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, watch } from "vue";
-import { usePretext } from "../composable/usePretext";
+import { usePretext } from "../composables/usePretext";
 
 const props = defineProps({
   text: { type: String, required: true },
