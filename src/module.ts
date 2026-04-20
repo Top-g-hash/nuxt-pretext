@@ -17,6 +17,10 @@ export default defineNuxtModule({
   },
   setup(options, nuxt) {
     const resolver = createResolver(import.meta.url);
+    nuxt.options.vite ||= {};
+    nuxt.options.vite.ssr ||= {};
+    nuxt.options.vite.ssr.noExternal = nuxt.options.vite.ssr.noExternal || [];
+    (nuxt.options.vite.ssr.noExternal as string[]).push("@chenglou/pretext");
 
     // Pass defaults to runtime via runtimeConfig
     nuxt.options.runtimeConfig.public.pretext = {

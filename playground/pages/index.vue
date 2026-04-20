@@ -11,13 +11,15 @@ const demoLineH = ref(22);
 
 // ── 1. usePretext vs getBoundingClientRect ───────────────────
 const { measure } = usePretext();
-const pretextResult = computed(() =>
-  measure(demoText.value, {
+// playground/pages/index.vue
+const pretextResult = computed(() => {
+  if (import.meta.server) return EMPTY_RESULT; // ← belt-and-suspenders
+  return measure(demoText.value, {
     width: demoWidth.value,
     font: demoFont.value,
     lineHeight: demoLineH.value,
-  }),
-);
+  });
+});
 
 const domRef = ref<HTMLElement | null>(null);
 const domHeight = ref<number | null>(null);
