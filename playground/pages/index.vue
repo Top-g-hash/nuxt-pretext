@@ -9,6 +9,12 @@ const demoWidth = ref(300);
 const demoFont = ref("15px 'DM Mono'");
 const demoLineH = ref(22);
 
+const EMPTY_RESULT = {
+  height: 0,
+  lineCount: 0,
+  lines: [],
+};
+
 // ── 1. usePretext vs getBoundingClientRect ───────────────────
 const { measure } = usePretext();
 // playground/pages/index.vue
